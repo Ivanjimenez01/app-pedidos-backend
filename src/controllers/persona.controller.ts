@@ -1,30 +1,29 @@
+import {service} from '@loopback/core';
 import {
   Count,
   CountSchema,
   Filter,
   FilterExcludingWhere,
   repository,
-  Where,
+  Where
 } from '@loopback/repository';
 import {
-  post,
-  param,
-  get,
-  getModelSchemaRef,
-  patch,
-  put,
-  del,
-  requestBody,
-  response,
+  del, get,
+  getModelSchemaRef, param, patch, post, put, requestBody,
+  response
 } from '@loopback/rest';
 import {Persona} from '../models';
 import {PersonaRepository} from '../repositories';
+import {AutenticacionService} from '../services';
+const fetch = require("node-fetch");
 
 export class PersonaController {
   constructor(
     @repository(PersonaRepository)
-    public personaRepository : PersonaRepository,
-  ) {}
+    public personaRepository: PersonaRepository,
+    @service(AutenticacionService)
+    public servicioAutenticacion: AutenticacionService
+  ) { }
 
   @post('/personas')
   @response(200, {
@@ -44,7 +43,34 @@ export class PersonaController {
     })
     persona: Omit<Persona, 'id'>,
   ): Promise<Persona> {
-    return this.personaRepository.create(persona);
+
+    //generar y cifrar clave
+
+    let clave = this.servicioAutenticacion.GenerarClave();
+    let claveCifrada = this.servicioAutenticacion.CifrarClave(clave);
+    persona.clave = claveCifrada;
+    let p = await this.personaRepository.create(persona);
+
+    //notificar al usuario por correo,
+    //el orden del fetch siempre es como se solicitan los datos en el microservicio de envio de mensajes
+    //como se ordeno y como se escribio, en este caso 1 correo_destino = destino, 2  asunto = asunto, 3 contenido = contenido
+    let destino = persona.correo;
+    let asunto = 'registro en la plataforma';
+    let contenido = `Hola ${persona.nombres}, su nombre de usuario es ${persona.correo} y su contraseña es ${clave}`;
+    fetch(`http://127.0.0.1:5000/envio-correo?correo_destino=${destino}&asunto=${asunto}&contenido=${contenido}`)
+      .then((data: any) => {
+        console.log(data);
+      })
+    //notificar al usuario por mensaje de texto
+    //el orden del fetch siempre es como se solicitan los datos en el microservicio de envio de mensajes
+    //como se ordeno y como se escribio, en este caso 1 telefono = celular, 2 mensaje = contenido
+    let celular = persona.celular;
+    fetch(`http://127.0.0.1:5000/sms?telefono=${celular}&mensaje=${contenido}`)
+      .then((data: any) => {
+        console.log(data);
+      })
+    return p;
+
   }
 
   @get('/personas/count')
